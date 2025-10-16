@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>TAE — Prompt Roulette</title>
+<meta name="theme-color" content="#A8B48F" />
+<style>
+:root{
+  --bg:#A8B48F; --panel:#B7C19C; --text:#3B2E2A; --muted:#5A4A44;
+  --btn:#3B2E2A; --btnText:#F3EFED; --border:rgba(59,46,42,.25)
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;display:flex;justify-content:center}
+.container{width:100%;max-width:560px;padding:22px}
+h1{text-align:center;margin:6px 0 10px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:18px;margin:12px 0}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.badge{background:rgba(255,255,255,.6);border:1px solid var(--border);border-radius:999px;padding:8px 12px;font-weight:700}
+button{border:0;border-radius:12px;padding:14px 16px;font-weight:800;cursor:pointer;font-size:16px}
+.btn{background:var(--btn);color:var(--btnText)}
+.btn.ghost{background:#fff;color:var(--text);border:1px solid var(--border)}
+.small{font-size:13px;color:var(--muted)}
+label{font-weight:700;margin:10px 0 6px;display:block}
+textarea{width:100%;background:#fff;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px;font-size:15px;min-height:120px}
+.controls{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.controls button{flex:1}
+.center{text-align:center}
+#timerWrap{height:10px;background:rgba(255,255,255,.45);border-radius:999px;overflow:hidden;margin-top:8px;border:1px solid var(--border);display:none}
+#timerBar{height:100%;width:100%;background:var(--btn);transition:width .2s linear}
+.result{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:10px}
+.score{font-weight:900}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🎲 Prompt Roulette</h1>
+
+  <!-- round setup -->
+  <div class="card" id="setup">
+    <div class="row" id="chips">
+      <span class="badge" id="chipScene">Scene: —</span>
+      <span class="badge" id="chipOutfit">Outfit: —</span>
+      <span class="badge" id="chipVibe">Vibe: —</span>
+    </div>
+    <div class="controls" style="margin-top:12px">
+      <button id="spin" class="btn">🔀 Spin prompt parts</button>
+      <button id="start" class="btn ghost" disabled>▶️ Start 20s round</button>
+    </div>
+    <p class="small" style="margin-top:8px">Spin to get a random <b>scene</b>, <b>outfit</b>, and <b>vibe</b>. Then you’ve got <b>20 seconds</b> to write the best TAE prompt. Frank will judge you.</p>
+    <div id="timerWrap"><div id="timerBar"></div></div>
+  </div>
+
+  <!-- writing area -->
+  <div class="card" id="play" style="display:none">
+    <label for="prompt">Your prompt (go! 20 seconds)</label>
+    <textarea id="prompt" placeholder="Write your full prompt

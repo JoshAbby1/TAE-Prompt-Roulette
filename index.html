@@ -37,9 +37,9 @@ textarea{width:100%;background:#fff;color:var(--text);border:1px solid var(--bor
 <body>
 <div class="container">
   <h1>🎲 Prompt Roulette</h1>
-  <div id="status">status: loading JS…</div>
+  <div id="status">status: ready</div>
 
-  <!-- round setup -->
+  <!-- setup -->
   <div class="card" id="setup">
     <div class="row">
       <span class="badge" id="chipScene">Scene: —</span>
@@ -54,7 +54,7 @@ textarea{width:100%;background:#fff;color:var(--text);border:1px solid var(--bor
     <div id="timerWrap"><div id="timerBar"></div></div>
   </div>
 
-  <!-- writing area -->
+  <!-- writing -->
   <div class="card" id="play" style="display:none">
     <label for="prompt">Your prompt (go! 30 seconds)</label>
     <textarea id="prompt" placeholder="Write your full prompt here… (ratio, scene, outfit, lighting, camera, mood, action, negatives)"></textarea>
@@ -82,12 +82,12 @@ textarea{width:100%;background:#fff;color:var(--text);border:1px solid var(--bor
 </div>
 
 <script>
-/* ======== DATA ======== */
+/* ===== DATA ===== */
 const SCENES=["laundromat at midnight","Tesco car park in rain","neon alley, puddles","moody cafe window","underground station platform","rooftop at golden hour","arcade with RGB lights","foggy street under sodium lights","gritty stairwell","seaside promenade at dusk","parking garage, harsh top light"];
 const OUTFITS=["grey tracksuit & chain","black cargos, clean trainers","North Face hoodie","oversized bomber & tee","denim jacket, white tee","all-black techwear","puffer, cargos, cap","neutral streetwear set","tracksuit + backpack"];
 const VIBES=["cinematic chaos","dreamy aesthetic","confident","moody","funny","Y2K glossy","high fashion editorial","grungy film","clean commercial"];
 
-/* ======== ELEMENTS ======== */
+/* ===== ELTS ===== */
 const chipScene=document.getElementById('chipScene');
 const chipOutfit=document.getElementById('chipOutfit');
 const chipVibe=document.getElementById('chipVibe');
@@ -104,106 +104,130 @@ const quipEl=document.getElementById('quip');
 const tipsEl=document.getElementById('tips');
 const statusEl=document.getElementById('status');
 
-statusEl.textContent='status: JS ready';
-
-/* ======== STATE ======== */
+/* ===== STATE ===== */
 let current={scene:null,outfit:null,vibe:null};
 let timer=null, remaining=30;
 
-/* ======== HELPERS ======== */
+/* ===== HELPERS ===== */
 function r(a){return a[Math.floor(Math.random()*a.length)]}
 function show(el,on=true){el.style.display=on?'':'none'}
-function resetTimer(){
-  clearInterval(timer);
-  remaining=30;
-  timeLeft.textContent='30s left';
-  timerBar.style.width='100%';
-}
+function resetTimer(){clearInterval(timer);remaining=30;timeLeft.textContent='30s left';timerBar.style.width='100%'}
 function startTimer(){
   timerWrap.style.display='block';
-  const total=30;
-  const start=Date.now();
+  const total=30, start=Date.now();
   timer=setInterval(()=>{
     const elapsed=Math.floor((Date.now()-start)/1000);
     remaining=Math.max(0,total-elapsed);
     timeLeft.textContent=remaining+'s left';
     timerBar.style.width=(remaining/total*100)+'%';
-    if(remaining<=0){
-      clearInterval(timer);
-      submitPrompt();
-    }
+    if(remaining<=0){clearInterval(timer);submitPrompt();}
   },200);
 }
 
-/* ======== UI ACTIONS ======== */
+/* ===== LOCAL SCORING (fallback & guard) ===== */
+function localScore(prompt){
+  const txt=(prompt||'').trim();
+  const lines=txt.split(/\n/).filter(s=>s.trim()).length;
+  const words=txt.split(/\s+/).filter(Boolean).length;
+
+  // feature hits
+  let feats=0;
+  [
+    /ratio/i,/camera|lens/i,/lighting|light/i,/mood/i,/action/i,
+    /negative/i,/background|scene/i,/outfit/i
+  ].forEach(re=>{ if(re.test(txt)) feats++; });
+
+  let base=3; // rubbish default
+  if (lines>=2 || words>25) base=5;      // at least decent effort
+  if (words>40) base=6;
+  if (words>60) base=7;
+
+  if (feats>=5) base+=2; else if (feats>=3) base+=1;
+
+  // clamp + rules
+  base=Math.max(3, Math.min(10, base));
+  if (lines>=2 && base<5) base=5;        // enforce your rule
+  return base;
+}
+
+/* ===== UI ACTIONS ===== */
 function spin(){
-  current.scene=r(SCENES);
-  current.outfit=r(OUTFITS);
-  current.vibe=r(VIBES);
+  current.scene=r(SCENES); current.outfit=r(OUTFITS); current.vibe=r(VIBES);
   chipScene.textContent='Scene: '+current.scene;
   chipOutfit.textContent='Outfit: '+current.outfit;
   chipVibe.textContent='Vibe: '+current.vibe;
   startBtn.disabled=false;
   statusEl.textContent='status: spun ✅';
 }
-
 function startRound(){
   if(!current.scene||!current.outfit||!current.vibe){statusEl.textContent='status: spin first';return;}
   show(setupCard,false); show(playCard,true);
-  promptEl.value=''; promptEl.focus();
-  resetTimer(); startTimer();
+  promptEl.value=''; promptEl.focus(); resetTimer(); startTimer();
   statusEl.textContent='status: round started';
 }
-
 async function submitPrompt(){
   clearInterval(timer);
   statusEl.textContent="status: grading…";
-  quipEl.textContent="Frank’s thinking…";
   show(playCard,false); show(resultsCard,true);
   await gradeWithFrank();
 }
-function giveUp(){
-  clearInterval(timer);
-  promptEl.value='(gave up)';
-  submitPrompt();
-}
+function giveUp(){clearInterval(timer);promptEl.value='(gave up)';submitPrompt();}
 function playAgain(){
   show(resultsCard,false); show(setupCard,true);
   startBtn.disabled=true;
   chipScene.textContent='Scene: —'; chipOutfit.textContent='Outfit: —'; chipVibe.textContent='Vibe: —';
-  timerWrap.style.display='none';
-  statusEl.textContent='status: ready';
+  timerWrap.style.display='none'; statusEl.textContent='status: ready';
 }
 async function copyPrompt(){
   try{await navigator.clipboard.writeText(promptEl.value||''); const b=document.getElementById('copyBtn'); const old=b.textContent; b.textContent='✅ Copied'; setTimeout(()=>b.textContent=old,900);}catch{}
 }
 
-/* ======== CALL BACKEND ======== */
+/* ===== BACKEND CALL ===== */
 async function gradeWithFrank(){
-  scoreEl.textContent='…/10'; tipsEl.textContent='';
+  scoreEl.textContent='…/10'; tipsEl.textContent=''; quipEl.textContent='Frank’s thinking…';
+
+  const body={scene:current.scene,outfit:current.outfit,vibe:current.vibe,prompt:(promptEl.value||'').trim()};
+
+  // helper to render a friendly result and NEVER show server error blobs
+  const render = (score, quip, tips=[])=>{
+    scoreEl.textContent = `${score}/10`;
+    quipEl.textContent  = quip || "Not bad.";
+    tipsEl.innerHTML    = tips.length ? ('Tips:<br>• '+tips.slice(0,3).join('<br>• ')) : '';
+  };
+
   try{
-    const res=await fetch('/api/grade',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      scene:current.scene,outfit:current.outfit,vibe:current.vibe,prompt:(promptEl.value||'').trim()
-    })});
+    const res = await fetch('/api/grade',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+
     if(!res.ok){
-      const err=await res.text();
-      scoreEl.textContent='—/10';
-      quipEl.textContent='Frank’s sulking.';
-      tipsEl.textContent=err||'Server error. Did you add GEMINI_API_KEY and redeploy?';
-      statusEl.textContent='status: API error';
+      // No raw error text shown. Fall back to local scoring.
+      const s = localScore(body.prompt);
+      const q =
+        s >= 8 ? "Solid stuff — proper effort."
+        : s >= 5 ? "Decent, bit safe though."
+        : "Barely a prompt, mate.";
+      render(s, q);
+      statusEl.textContent='status: graded (fallback) ✅';
       return;
     }
-    const data=await res.json();
-    scoreEl.textContent=(data.score??6)+'/10';
-    quipEl.textContent=data.quip||'Frank shrugs.';
-    tipsEl.innerHTML=(Array.isArray(data.tips)&&data.tips.length)?'Tips:<br>• '+data.tips.join('<br>• '):'';
+
+    const data = await res.json();
+    let s = parseInt(data.score,10);
+    if (!Number.isFinite(s) || s<=0) s = localScore(body.prompt);  // guard against 0/NaN
+    if ((body.prompt.split(/\n/).filter(Boolean).length>=2) && s<5) s=5; // enforce rule
+
+    const q = data.quip || (s>=8 ? "Strong prompt." : s>=5 ? "Decent, push it further." : "Needs work.");
+    render(Math.max(3,Math.min(10,s)), q, Array.isArray(data.tips)?data.tips:[]);
     statusEl.textContent='status: graded ✅';
+
   }catch(e){
-    console.error(e);
-    scoreEl.textContent='—/10';
-    quipEl.textContent='Frank fell off the trolley.';
-    tipsEl.textContent='Network error. Is /api/grade deployed?';
-    statusEl.textContent='status: network error';
+    // Network/function crash → friendly UI + local scoring
+    const s = localScore(body.prompt);
+    const q =
+      s >= 8 ? "Strong effort — I’ll allow it."
+      : s >= 5 ? "Decent, tighten it up."
+      : "That’s weak tea, mate.";
+    render(s, q);
+    statusEl.textContent='status: graded (offline) ✅';
   }
 }
 </script>

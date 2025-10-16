@@ -8,7 +8,7 @@
 <style>
 :root{
   --bg:#A8B48F; --panel:#B7C19C; --text:#3B2E2A; --muted:#5A4A44;
-  --btn:#3B2E2A; --btnText:#F3EFED; --border:rgba(59,46,42,.25)
+  --btn:#3B2E2A; --btnText:#F3EFED; --border:rgba(59,46,42,.25); --white:#fff
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
@@ -17,7 +17,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
 h1{text-align:center;margin:6px 0 10px}
 .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:18px;margin:12px 0}
 .row{display:flex;gap:8px;flex-wrap:wrap}
-.badge{background:rgba(255,255,255,.6);border:1px solid var(--border);border-radius:999px;padding:8px 12px;font-weight:700}
+.badge{background:rgba(255,255,255,.75);border:1px solid var(--border);border-radius:999px;padding:8px 12px;font-weight:700}
 button{border:0;border-radius:12px;padding:14px 16px;font-weight:800;cursor:pointer;font-size:16px}
 .btn{background:var(--btn);color:var(--btnText)}
 .btn.ghost{background:#fff;color:var(--text);border:1px solid var(--border)}
@@ -32,6 +32,12 @@ textarea{width:100%;background:#fff;color:var(--text);border:1px solid var(--bor
 .result{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:10px}
 .score{font-weight:900}
 #status{font-size:12px;color:var(--muted);text-align:center;margin-top:6px}
+.helper{background:var(--white);border:1px dashed var(--border);border-radius:12px;padding:10px;margin-top:10px}
+.helper h3{margin:0 0 6px;font-size:14px}
+.hints{display:flex;flex-wrap:wrap;gap:8px}
+.hint{background:#fff;border:1px solid var(--border);border-radius:999px;padding:6px 10px;font-size:13px;cursor:pointer}
+.kv{display:flex;gap:8px;flex-wrap:wrap}
+.kv .badge{background:#fff}
 </style>
 </head>
 <body>
@@ -56,7 +62,31 @@ textarea{width:100%;background:#fff;color:var(--text);border:1px solid var(--bor
 
   <!-- writing -->
   <div class="card" id="play" style="display:none">
-    <label for="prompt">Your prompt (go! 30 seconds)</label>
+    <!-- keep choices visible here -->
+    <div class="kv">
+      <span class="badge" id="drawScene">Scene: —</span>
+      <span class="badge" id="drawOutfit">Outfit: —</span>
+      <span class="badge" id="drawVibe">Vibe: —</span>
+    </div>
+
+    <!-- helper block -->
+    <div class="helper">
+      <h3>Need a hand?</h3>
+      <div class="hints" id="hints">
+        <span class="hint" onclick="addToPrompt('Ratio: 9:16')">Ratio: 9:16</span>
+        <span class="hint" onclick="addToPrompt('Camera: 85mm lens, eye-level')">Camera: 85mm</span>
+        <span class="hint" onclick="addToPrompt('Lighting: cinematic LED glow, soft shadows')">Lighting: cinematic</span>
+        <span class="hint" onclick="addToPrompt('Mood: confident')">Mood: confident</span>
+        <span class="hint" onclick="addToPrompt('Action: walking toward camera')">Action: walking</span>
+        <span class="hint" onclick="addToPrompt('Background: soft depth, bokeh neon')">Background: bokeh neon</span>
+        <span class="hint" onclick="addToPrompt('Negative Prompts: cartoonish, blurry, extra fingers, watermark')">Negatives</span>
+      </div>
+      <div class="controls" style="margin-top:10px">
+        <button class="btn ghost" onclick="insertScaffold()">🧩 Insert prompt scaffold</button>
+      </div>
+    </div>
+
+    <label for="prompt" style="margin-top:12px">Your prompt (go! 30 seconds)</label>
     <textarea id="prompt" placeholder="Write your full prompt here… (ratio, scene, outfit, lighting, camera, mood, action, negatives)"></textarea>
     <div class="controls">
       <button class="btn" onclick="submitPrompt()">📝 Submit to Frank</button>
@@ -91,6 +121,9 @@ const VIBES=["cinematic chaos","dreamy aesthetic","confident","moody","funny","Y
 const chipScene=document.getElementById('chipScene');
 const chipOutfit=document.getElementById('chipOutfit');
 const chipVibe=document.getElementById('chipVibe');
+const drawScene=document.getElementById('drawScene');
+const drawOutfit=document.getElementById('drawOutfit');
+const drawVibe=document.getElementById('drawVibe');
 const startBtn=document.getElementById('startBtn');
 const setupCard=document.getElementById('setup');
 const playCard=document.getElementById('play');
@@ -129,24 +162,16 @@ function localScore(prompt){
   const txt=(prompt||'').trim();
   const lines=txt.split(/\n/).filter(s=>s.trim()).length;
   const words=txt.split(/\s+/).filter(Boolean).length;
-
-  // feature hits
   let feats=0;
-  [
-    /ratio/i,/camera|lens/i,/lighting|light/i,/mood/i,/action/i,
-    /negative/i,/background|scene/i,/outfit/i
-  ].forEach(re=>{ if(re.test(txt)) feats++; });
-
-  let base=3; // rubbish default
-  if (lines>=2 || words>25) base=5;      // at least decent effort
+  [/ratio/i,/camera|lens/i,/lighting|light/i,/mood/i,/action/i,/negative/i,/background|scene/i,/outfit/i]
+    .forEach(re=>{ if(re.test(txt)) feats++; });
+  let base=3;
+  if (lines>=2 || words>25) base=5;
   if (words>40) base=6;
   if (words>60) base=7;
-
   if (feats>=5) base+=2; else if (feats>=3) base+=1;
-
-  // clamp + rules
   base=Math.max(3, Math.min(10, base));
-  if (lines>=2 && base<5) base=5;        // enforce your rule
+  if (lines>=2 && base<5) base=5;
   return base;
 }
 
@@ -161,9 +186,33 @@ function spin(){
 }
 function startRound(){
   if(!current.scene||!current.outfit||!current.vibe){statusEl.textContent='status: spin first';return;}
+  // mirror choices on the play screen
+  drawScene.textContent='Scene: '+current.scene;
+  drawOutfit.textContent='Outfit: '+current.outfit;
+  drawVibe.textContent='Vibe: '+current.vibe;
+
   show(setupCard,false); show(playCard,true);
   promptEl.value=''; promptEl.focus(); resetTimer(); startTimer();
   statusEl.textContent='status: round started';
+}
+function addToPrompt(text){
+  const add = (promptEl.value ? promptEl.value.replace(/\s+$/,'') + '\n' : '') + text;
+  promptEl.value = add;
+  promptEl.focus();
+}
+function insertScaffold(){
+  const scaffold =
+`Ratio: 9:16
+Outfit: ${current.outfit}
+Scene: ${current.scene}
+Background: add depth and texture consistent with the scene
+Camera: 85mm lens, eye-level
+Lighting: cinematic LED glow, soft shadow
+Mood: ${current.vibe}
+Action: (what are they doing?)
+Negative Prompts: cartoonish, blurry, extra fingers, watermark`;
+  promptEl.value = scaffold;
+  promptEl.focus();
 }
 async function submitPrompt(){
   clearInterval(timer);
@@ -188,7 +237,6 @@ async function gradeWithFrank(){
 
   const body={scene:current.scene,outfit:current.outfit,vibe:current.vibe,prompt:(promptEl.value||'').trim()};
 
-  // helper to render a friendly result and NEVER show server error blobs
   const render = (score, quip, tips=[])=>{
     scoreEl.textContent = `${score}/10`;
     quipEl.textContent  = quip || "Not bad.";
@@ -199,33 +247,24 @@ async function gradeWithFrank(){
     const res = await fetch('/api/grade',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
 
     if(!res.ok){
-      // No raw error text shown. Fall back to local scoring.
       const s = localScore(body.prompt);
-      const q =
-        s >= 8 ? "Solid stuff — proper effort."
-        : s >= 5 ? "Decent, bit safe though."
-        : "Barely a prompt, mate.";
-      render(s, q);
+      const q = s>=8 ? "Solid stuff — proper effort." : s>=5 ? "Decent, bit safe though." : "Barely a prompt, mate.";
+      render(s,q);
       statusEl.textContent='status: graded (fallback) ✅';
       return;
     }
 
     const data = await res.json();
     let s = parseInt(data.score,10);
-    if (!Number.isFinite(s) || s<=0) s = localScore(body.prompt);  // guard against 0/NaN
-    if ((body.prompt.split(/\n/).filter(Boolean).length>=2) && s<5) s=5; // enforce rule
-
+    if (!Number.isFinite(s) || s<=0) s = localScore(body.prompt);
+    if ((body.prompt.split(/\n/).filter(Boolean).length>=2) && s<5) s=5;
     const q = data.quip || (s>=8 ? "Strong prompt." : s>=5 ? "Decent, push it further." : "Needs work.");
     render(Math.max(3,Math.min(10,s)), q, Array.isArray(data.tips)?data.tips:[]);
     statusEl.textContent='status: graded ✅';
 
   }catch(e){
-    // Network/function crash → friendly UI + local scoring
     const s = localScore(body.prompt);
-    const q =
-      s >= 8 ? "Strong effort — I’ll allow it."
-      : s >= 5 ? "Decent, tighten it up."
-      : "That’s weak tea, mate.";
+    const q = s>=8 ? "Strong effort — I’ll allow it." : s>=5 ? "Decent, tighten it up." : "That’s weak tea, mate.";
     render(s, q);
     statusEl.textContent='status: graded (offline) ✅';
   }

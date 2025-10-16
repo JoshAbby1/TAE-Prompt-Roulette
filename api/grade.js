@@ -1,54 +1,62 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+function localScore(prompt) {
+  const txt = (prompt || "").trim();
+  const lines = txt.split(/\n/).filter(s => s.trim()).length;
+  const words = txt.split(/\s+/).filter(Boolean).length;
+
+  let feats = 0;
+  [/ratio/i,/camera|lens/i,/lighting|light/i,/mood/i,/action/i,/negative/i,/background|scene/i,/outfit/i]
+    .forEach(re => { if (re.test(txt)) feats++; });
+
+  let base = 3;
+  if (lines >= 2 || words > 25) base = 5;
+  if (words > 40) base = 6;
+  if (words > 60) base = 7;
+  if (feats >= 5) base += 2; else if (feats >= 3) base += 1;
+
+  base = Math.max(3, Math.min(10, base));
+  if (lines >= 2 && base < 5) base = 5;
+  return base;
+}
+
 export default async function handler(req, res) {
   try {
     const { scene, outfit, vibe, prompt } = req.body || {};
-    const text = (prompt || "").trim();
+    const promptText = (prompt || "").trim();
 
     if (!process.env.GEMINI_API_KEY) {
-      return res.status(500).json({
-        score: 0,
-        quip: "Frank’s sulking — missing Gemini API key.",
-        tips: [],
+      // No leaking internals — and never 0
+      return res.status(200).json({
+        score: localScore(promptText),
+        quip: "Frank’s offline but gave it a fair glance.",
+        tips: ["Add lighting and camera", "Include mood", "Tighten negatives"],
       });
     }
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    // quick length + quality check to help Frank decide realistically
-    let baseScore = 3;
-    const wordCount = text.split(/\s+/).length;
-
-    if (wordCount > 40) baseScore = 8;
-    else if (wordCount > 25) baseScore = 6;
-    else if (wordCount > 10) baseScore = 4;
-    else if (wordCount > 3) baseScore = 3;
-    else baseScore = 1;
-
-    // Ask Gemini for tone + adjustment
     const frankPrompt = `
-You are Frank, a brutally honest but funny British creative director.
-Judge this user's AI image prompt based on quality, creativity and effort.
+You are Frank, a sarcastic British creative director.
+Judge this user's AI image prompt for quality and completeness.
 
-Details:
+Context:
 Scene: ${scene}
 Outfit: ${outfit}
 Vibe: ${vibe}
 
-Prompt they wrote:
-"${prompt}"
+Prompt:
+"${promptText}"
 
 Rules:
-- Base your rating 1–10 on creativity, detail, and how complete it feels.
-- If it’s short and lazy, under 5.
-- If it’s detailed and well-structured, 8–10.
-- Give one short sarcastic comment.
-- Give 2–3 short practical tips.
-- Do not include code fences or markdown.
+- Return only valid JSON (no markdown, no code fences).
+- Score 1–10 (short & lazy <5; solid detail 8–10).
+- One short cheeky quip (max 120 chars).
+- 2–3 short tips.
 
-Return ONLY valid JSON like this:
-{"score":8,"quip":"Decent effort, mate.","tips":["Add lighting details","Include mood","Tighten negatives"]}
+JSON format:
+{"score":8,"quip":"Cheeky line.","tips":["tip1","tip2","tip3"]}
 `;
 
     const result = await model.generateContent(frankPrompt);
@@ -59,38 +67,36 @@ Return ONLY valid JSON like this:
     try {
       data = JSON.parse(clean);
     } catch {
-      data = {
-        score: baseScore,
-        quip:
-          baseScore >= 8
-            ? "Solid prompt, I’ll give you that."
-            : baseScore >= 5
-            ? "Not bad, bit safe though."
-            : baseScore >= 3
-            ? "Lazy one, innit?"
-            : "That’s tragic, mate.",
-        tips: ["Add more structure", "Mention lighting or mood", "Describe the camera angle"],
-      };
+      data = null;
     }
 
-    // Blend Gemini’s score with realism based on length
-    let finalScore = data.score || baseScore;
-    if (Math.abs(finalScore - baseScore) > 3) {
-      finalScore = Math.round((finalScore + baseScore) / 2);
-    }
-    finalScore = Math.max(1, Math.min(10, finalScore));
+    let score = data?.score;
+    if (!Number.isFinite(score) || score <= 0) score = localScore(promptText);
 
-    res.status(200).json({
-      score: finalScore,
-      quip: data.quip || "Frank’s unimpressed.",
-      tips: Array.isArray(data.tips) ? data.tips.slice(0, 3) : [],
+    // enforce your rule
+    const lines = promptText.split(/\n/).filter(Boolean).length;
+    if (lines >= 2 && score < 5) score = 5;
+
+    const quip =
+      (data?.quip) ||
+      (score >= 8 ? "Solid stuff, keep it rolling."
+       : score >= 5 ? "Decent — push it further."
+       : "That’s weak tea, mate.");
+
+    const tips = Array.isArray(data?.tips) ? data.tips.slice(0,3) : ["Add lighting & camera","Include mood/action","Use negatives"];
+
+    return res.status(200).json({
+      score: Math.max(3, Math.min(10, Math.round(score))),
+      quip, tips
     });
+
   } catch (err) {
     console.error("Frank crashed:", err);
-    res.status(500).json({
-      score: 4,
-      quip: "Frank’s sulking. Try again later.",
-      tips: [],
+    // Hide internal error & still return fair score
+    return res.status(200).json({
+      score: localScore((req.body?.prompt)||""),
+      quip: "Frank’s sulking. Scored it anyway.",
+      tips: ["Add structure", "Be specific on lighting", "Mention lens/angle"],
     });
   }
 }

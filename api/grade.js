@@ -3,54 +3,94 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 export default async function handler(req, res) {
   try {
     const { scene, outfit, vibe, prompt } = req.body || {};
+    const text = (prompt || "").trim();
 
     if (!process.env.GEMINI_API_KEY) {
-      return res.status(500).send("Missing GEMINI_API_KEY env var.");
+      return res.status(500).json({
+        score: 0,
+        quip: "Frank’s sulking — missing Gemini API key.",
+        tips: [],
+      });
     }
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    const frankPrompt = `
-You are Frank, a sarcastic creative AI prompt judge.
-Rate the user's prompt that was written from these random parts:
+    // quick length + quality check to help Frank decide realistically
+    let baseScore = 3;
+    const wordCount = text.split(/\s+/).length;
 
+    if (wordCount > 40) baseScore = 8;
+    else if (wordCount > 25) baseScore = 6;
+    else if (wordCount > 10) baseScore = 4;
+    else if (wordCount > 3) baseScore = 3;
+    else baseScore = 1;
+
+    // Ask Gemini for tone + adjustment
+    const frankPrompt = `
+You are Frank, a brutally honest but funny British creative director.
+Judge this user's AI image prompt based on quality, creativity and effort.
+
+Details:
 Scene: ${scene}
 Outfit: ${outfit}
 Vibe: ${vibe}
 
-Prompt to grade:
+Prompt they wrote:
 "${prompt}"
 
-Your job:
-- Give a score from 1 to 10
-- One cheeky sentence of feedback in British tone
-- Up to 3 short tips for improvement
+Rules:
+- Base your rating 1–10 on creativity, detail, and how complete it feels.
+- If it’s short and lazy, under 5.
+- If it’s detailed and well-structured, 8–10.
+- Give one short sarcastic comment.
+- Give 2–3 short practical tips.
+- Do not include code fences or markdown.
 
-Reply ONLY valid JSON (no markdown, no code fences):
-{"score": 8, "quip": "Needs more chaos, mate.", "tips": ["Add lens", "Add lighting", "Tighten negatives"]}
+Return ONLY valid JSON like this:
+{"score":8,"quip":"Decent effort, mate.","tips":["Add lighting details","Include mood","Tighten negatives"]}
 `;
 
     const result = await model.generateContent(frankPrompt);
     const raw = (result?.response?.text() || "").trim();
-
-    // Strip accidental markdown code-fences if any
     const clean = raw.replace(/```json|```/g, "").trim();
 
     let data;
     try {
       data = JSON.parse(clean);
-    } catch (e) {
+    } catch {
       data = {
-        score: 5,
-        quip: "Frank mumbled something unintelligible. Try again, mate.",
-        tips: ["Add camera & lighting", "Include a clear action", "Use negatives"],
+        score: baseScore,
+        quip:
+          baseScore >= 8
+            ? "Solid prompt, I’ll give you that."
+            : baseScore >= 5
+            ? "Not bad, bit safe though."
+            : baseScore >= 3
+            ? "Lazy one, innit?"
+            : "That’s tragic, mate.",
+        tips: ["Add more structure", "Mention lighting or mood", "Describe the camera angle"],
       };
     }
 
-    res.status(200).json(data);
+    // Blend Gemini’s score with realism based on length
+    let finalScore = data.score || baseScore;
+    if (Math.abs(finalScore - baseScore) > 3) {
+      finalScore = Math.round((finalScore + baseScore) / 2);
+    }
+    finalScore = Math.max(1, Math.min(10, finalScore));
+
+    res.status(200).json({
+      score: finalScore,
+      quip: data.quip || "Frank’s unimpressed.",
+      tips: Array.isArray(data.tips) ? data.tips.slice(0, 3) : [],
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: String(err?.message || err) });
+    console.error("Frank crashed:", err);
+    res.status(500).json({
+      score: 4,
+      quip: "Frank’s sulking. Try again later.",
+      tips: [],
+    });
   }
 }
